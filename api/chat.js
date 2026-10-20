@@ -17,7 +17,7 @@ export default async function handler(req, res) {
 
   // 1. قراءة المفتاح من متغيرات البيئة
   const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
-  const MODEL = process.env.GOOGLE_MODEL || 'gemini-1.5-flash'; // يمكنك تغييره: gemini-1.5-pro, gemini-2.0-flash
+  const MODEL = process.env.GOOGLE_MODEL || 'gemini-2.0-flash'; // موديلات متاحة: gemini-2.0-flash, gemini-2.5-flash, gemini-2.0-flash-lite
 
   if (!GOOGLE_API_KEY) {
     return res.status(500).json({ 
@@ -114,6 +114,7 @@ export default async function handler(req, res) {
 
     // 4. بناء طلب Gemini
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GOOGLE_API_KEY}`;
+    // لو فشل الموديل، سنحاول تلقائيا مع موديل بديل في الأسفل
 
     const geminiBody = {
       contents: contents,
@@ -140,11 +141,28 @@ export default async function handler(req, res) {
 
     const data = await geminiRes.json();
 
-    // 5. معالجة الأخطاء من Google
+    // 5. معالجة الأخطاء من Google — مع fallback تلقائي للموديل
     if (!geminiRes.ok) {
-      console.error('Gemini error:', JSON.stringify(data));
       const msg = data?.error?.message || 'خطأ من Google Gemini';
-      // رسائل مفهومة للمستخدم
+      // إذا الموديل غير موجود، جرّب موديلات بديلة تلقائيا
+      const isModelNotFound = msg.includes('is not found') || msg.includes('not supported') || msg.includes('not found');
+      if (isModelNotFound && !req._retried) {
+        const fallbacks = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.0-flash-lite', 'gemini-flash-latest'];
+        for (const fb of fallbacks) {
+          if (fb === MODEL) continue;
+          try {
+            const fbUrl = `https://generativelanguage.googleapis.com/v1beta/models/${fb}:generateContent?key=${GOOGLE_API_KEY}`;
+            const fbRes = await fetch(fbUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(geminiBody) });
+            const fbData = await fbRes.json();
+            if (fbRes.ok && fbData.candidates?.[0]) {
+              const partsOut2 = fbData.candidates[0].content?.parts || [];
+              let replyText2 = partsOut2.map(p => p.text || '').join('\n').trim() || 'ما فهمتش، واش تقدر توضّحلي أكثر؟';
+              return res.status(200).json({ choices: [{ message: { content: replyText2, role: 'assistant' } }], content: [{ text: replyText2 }], model: fb, usage: fbData.usageMetadata });
+            }
+          } catch(e) {}
+        }
+      }
+      console.error('Gemini error:', JSON.stringify(data));
       if (geminiRes.status === 429) {
         return res.status(429).json({ error: 'انتهى الرصيد أو تجاوزت الحد المسموح في Google. انتظر دقيقة أو بدّل المفتاح.' });
       }
