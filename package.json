@@ -1,0 +1,9 @@
+{
+  "name": "derja-ai-gemini",
+  "version": "1.0.0",
+  "description": "Derja AI - Vercel + Google Gemini",
+  "type": "module",
+  "engines": {
+    "node": "18.x"
+  }
+}
