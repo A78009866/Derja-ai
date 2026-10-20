@@ -823,15 +823,22 @@
     }
 
     function hideIntro() {
+      if (!splash) return;
       splash.classList.add('hidden');
-      introVideo.pause();
-      introVideo.currentTime = 0;
+      try { introVideo.pause(); introVideo.currentTime = 0; } catch(e) {}
     }
 
     function showIntro() {
+      if (!splash || !introVideo) { hideIntro(); return; }
+      // إذا الفيديو ما تحملش، أخفي السبلاش بعد 2.5 ثانية كحد أقصى
+      let fallback = setTimeout(() => { hideIntro(); }, 2500);
+      const clearFallback = () => clearTimeout(fallback);
+      introVideo.addEventListener('ended', clearFallback, {once:true});
+      introVideo.addEventListener('error', () => { clearFallback(); hideIntro(); }, {once:true});
       splash.classList.remove('hidden');
-      introVideo.currentTime = 0;
-      introVideo.play().catch(() => {});
+      try { introVideo.currentTime = 0; } catch(e) {}
+      const p = introVideo.play();
+      if (p && p.catch) p.catch(() => { clearFallback(); hideIntro(); });
     }
 
     function renderChat() {
@@ -1381,7 +1388,8 @@
     historyBtn.addEventListener('click', () => toggleSidebar(true));
     overlay.addEventListener('click', () => toggleSidebar(false));
     menuBtn.addEventListener('click', createNewChat);
-    introVideo.addEventListener('ended', onIntroEnd);
+    if (introVideo) introVideo.addEventListener('ended', onIntroEnd);
+    if (introVideo) introVideo.addEventListener('error', onIntroEnd);
     acceptDisclaimer.addEventListener('click', acceptDisclaimerHandler);
 
     // init
@@ -1425,6 +1433,10 @@
     updateHeight();
 
     showIntro();
+    // حماية إضافية: أخفي السبلاش بعد 3 ثواني مهما صار
+    setTimeout(hideIntro, 3000);
+    // إذا المستخدم ضغط في أي مكان أخفي السبلاش
+    splash.addEventListener('click', hideIntro);
   </script>
 </body>
 </html>
